@@ -626,6 +626,97 @@ void CStreamInfoPage::SetService()
 		}
 	}
 
+	// TSMF情報
+	LibISDB::AnalyzerFilter::TSMFInfo TSMFInfo;
+	if (pAnalyzer->GetTSMFInfo(&TSMFInfo)) {
+		tvis.hParent = TVI_ROOT;
+		tvis.hInsertAfter = TVI_LAST;
+		tvis.item.mask = TVIF_STATE | TVIF_TEXT | TVIF_CHILDREN;
+		tvis.item.state = TVIS_EXPANDED;
+		tvis.item.stateMask = ~0U;
+		tvis.item.pszText = const_cast<LPTSTR>(TEXT("TSMF"));
+		tvis.item.cChildren = 1;
+		hItem = TreeView_InsertItem(hwndTree, &tvis);
+		if (hItem != nullptr) {
+			tvis.hParent = hItem;
+			tvis.item.state = 0;
+			tvis.item.cChildren = 0;
+
+			StringFormat(szText, TEXT("多重フレーム同期信号: {:#05x}"), TSMFInfo.FrameSync);
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+
+			StringFormat(szText, TEXT("バージョン : {}"), TSMFInfo.VersionNumber);
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+
+			StringFormat(
+				szText,
+				TEXT("多重フレーム形式 : {:#x} {}"),
+				TSMFInfo.FrameType,
+				(TSMFInfo.FrameType == 0x1 ? TEXT("TSMF [53,15]") :
+				 TSMFInfo.FrameType == 0x2 ? TEXT("TSMF [53,15] 複数TS不可") :
+				 TEXT("単一TS")));
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+
+			StringFormat(szText, TEXT("緊急警報指示子 : {}"), TSMFInfo.EmergencyIndicator);
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+
+			StringFormat(szText, TEXT("搬送波群識別子 : {} ({:#02x})"), TSMFInfo.GroupID, TSMFInfo.GroupID);
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+
+			StringFormat(szText, TEXT("搬送波 : {}/{}"), TSMFInfo.CarrierSequence, TSMFInfo.NumberOfCarriers);
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+
+			StringFormat(szText, TEXT("フレーム数 : {}"), TSMFInfo.NumberOfFrames);
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+
+			StringFormat(szText, TEXT("フレーム位置情報: {}"), TSMFInfo.FramePosition);
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+
+			int tsCount = 1, tlvCount = 1;
+			for (int i = 0; i < 15; i++) {
+				if (TSMFInfo.Streams[i].IsActive) {
+					LPCTSTR typeLabel, idLabel;
+					int relNum;
+					if (TSMFInfo.Streams[i].StreamType) {
+						typeLabel = TEXT("TS");
+						idLabel = TEXT("TSID");
+						relNum = tsCount++;
+					} else {
+						typeLabel = TEXT("TLV");
+						idLabel = TEXT("TLVID");
+						relNum = tlvCount++;
+					}
+					StringFormat(
+						szText,
+						TEXT("{}{} : {} {:#04x} ({}) / ONID: {:#04x} ({}) / 受信状態: {}"),
+						typeLabel,
+						relNum,
+						idLabel,
+						TSMFInfo.Streams[i].StreamID,
+						TSMFInfo.Streams[i].StreamID,
+						TSMFInfo.Streams[i].OriginalNetworkID,
+						TSMFInfo.Streams[i].OriginalNetworkID,
+						TSMFInfo.Streams[i].ReceiveStatus);
+					tvis.item.pszText = szText;
+					TreeView_InsertItem(hwndTree, &tvis);
+				}
+			}
+
+
+			StringFormat(szText, TEXT("CRC32 : {:#08x}"), TSMFInfo.CRC);
+			tvis.item.pszText = szText;
+			TreeView_InsertItem(hwndTree, &tvis);
+		}
+	}
+
 	// 地上/衛星分配システム
 	LibISDB::AnalyzerFilter::TerrestrialDeliverySystemList TerrestrialList;
 	if (pAnalyzer->GetTerrestrialDeliverySystemList(&TerrestrialList)) {

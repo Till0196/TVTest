@@ -626,7 +626,7 @@ void CStreamInfoPage::SetService()
 		}
 	}
 
-	// TSMF情報
+	// 多重フレームヘッダ
 	LibISDB::AnalyzerFilter::TSMFInfo TSMFInfo;
 	if (pAnalyzer->GetTSMFInfo(&TSMFInfo)) {
 		tvis.hParent = TVI_ROOT;
@@ -634,7 +634,7 @@ void CStreamInfoPage::SetService()
 		tvis.item.mask = TVIF_STATE | TVIF_TEXT | TVIF_CHILDREN;
 		tvis.item.state = TVIS_EXPANDED;
 		tvis.item.stateMask = ~0U;
-		tvis.item.pszText = const_cast<LPTSTR>(TEXT("TSMF"));
+		tvis.item.pszText = const_cast<LPTSTR>(TEXT("多重フレームヘッダ (TSMF)"));
 		tvis.item.cChildren = 1;
 		hItem = TreeView_InsertItem(hwndTree, &tvis);
 		if (hItem != nullptr) {
@@ -652,33 +652,54 @@ void CStreamInfoPage::SetService()
 
 			StringFormat(
 				szText,
-				TEXT("多重フレーム形式 : {:#x} {}"),
+				TEXT("多重フレーム形式 : {:#02x} {}"),
 				TSMFInfo.FrameType,
-				(TSMFInfo.FrameType == 0x1 ? TEXT("TSMF [53,15]") :
-				 TSMFInfo.FrameType == 0x2 ? TEXT("TSMF [53,15] 複数TS不可") :
-				 TEXT("単一TS")));
+				(TSMFInfo.FrameType == 0x01 ? TEXT("TSMF [53,15]") :
+				 TSMFInfo.FrameType == 0x02 ? TEXT("TSMF [53,15] 複数TS不可") :
+				 TSMFInfo.FrameType == 0x0F ? TEXT("使用しない") :
+				 TEXT("未定義")));
 			tvis.item.pszText = szText;
 			TreeView_InsertItem(hwndTree, &tvis);
 
-			StringFormat(szText, TEXT("緊急警報指示子 : {}"), TSMFInfo.EmergencyIndicator);
-			tvis.item.pszText = szText;
-			TreeView_InsertItem(hwndTree, &tvis);
+			if (TSMFInfo.NumberOfFrames == 3 || TSMFInfo.NumberOfFrames == 4) {
+				tvis.item.mask = TVIF_STATE | TVIF_TEXT | TVIF_CHILDREN;
+				tvis.item.state = TVIS_EXPANDED;
+				tvis.item.stateMask = ~0U;
+				tvis.item.pszText = const_cast<LPTSTR>(TEXT("拡張TSMFフレームヘッダ"));
+				tvis.item.cChildren = 1;
+				HTREEITEM hExtItem = TreeView_InsertItem(hwndTree, &tvis);
+				if (hExtItem != nullptr) {
+					tvis.hParent = hExtItem;
+					tvis.item.mask = TVIF_TEXT;
+					tvis.item.state = 0;
+					tvis.item.cChildren = 0;
 
-			StringFormat(szText, TEXT("搬送波群識別子 : {} ({:#02x})"), TSMFInfo.GroupID, TSMFInfo.GroupID);
-			tvis.item.pszText = szText;
-			TreeView_InsertItem(hwndTree, &tvis);
+					StringFormat(szText, TEXT("緊急警報指示 : {} ({})"),
+						TSMFInfo.EmergencyIndicator,
+						(TSMFInfo.EmergencyIndicator == 1 ? TEXT("起動制御が行われている") : 
+						 TSMFInfo.EmergencyIndicator == 0 ? TEXT("起動制御が行われていない") : TEXT("未定義")));
+					tvis.item.pszText = szText;
+					TreeView_InsertItem(hwndTree, &tvis);
 
-			StringFormat(szText, TEXT("搬送波 : {}/{}"), TSMFInfo.CarrierSequence, TSMFInfo.NumberOfCarriers);
-			tvis.item.pszText = szText;
-			TreeView_InsertItem(hwndTree, &tvis);
+					StringFormat(szText, TEXT("搬送波群識別 : {:#02x} ({})"), TSMFInfo.GroupID, TSMFInfo.GroupID);
+					tvis.item.pszText = szText;
+					TreeView_InsertItem(hwndTree, &tvis);
 
-			StringFormat(szText, TEXT("フレーム数 : {}"), TSMFInfo.NumberOfFrames);
-			tvis.item.pszText = szText;
-			TreeView_InsertItem(hwndTree, &tvis);
+					StringFormat(szText, TEXT("搬送波 : {}/{}"), TSMFInfo.CarrierSequence, TSMFInfo.NumberOfCarriers);
+					tvis.item.pszText = szText;
+					TreeView_InsertItem(hwndTree, &tvis);
 
-			StringFormat(szText, TEXT("フレーム位置情報: {}"), TSMFInfo.FramePosition);
-			tvis.item.pszText = szText;
-			TreeView_InsertItem(hwndTree, &tvis);
+					StringFormat(szText, TEXT("スーパーフレーム総数 : {:#03x} ({})"), TSMFInfo.NumberOfFrames, TSMFInfo.NumberOfFrames);
+					tvis.item.pszText = szText;
+					TreeView_InsertItem(hwndTree, &tvis);
+
+					StringFormat(szText, TEXT("スーパーフレーム位置情報 : {}"), TSMFInfo.FramePosition);
+					tvis.item.pszText = szText;
+					TreeView_InsertItem(hwndTree, &tvis);
+
+					tvis.hParent = hItem;
+				}
+			}
 
 			int tsCount = 1, tlvCount = 1;
 			for (int i = 0; i < 15; i++) {

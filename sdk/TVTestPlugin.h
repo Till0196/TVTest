@@ -4236,15 +4236,17 @@ inline int MsgGetDriverFullPathName(PluginParam *pParam, LPWSTR pszPath, int Max
 @param[in] pParam プラグインパラメータ
 @param[in] NetworkID ネットワーク ID
 @param[in] ServiceID サービス ID
-@param[in] LogoType ロゴの種類。0 から 5 までで指定します。以下のサイズのロゴが取得されます。
-                    | LogoType | サイズ |
-                    |----------|--------|
-                    | 0        | 48x24  |
-                    | 1        | 36x24  |
-                    | 2        | 48x27  |
-                    | 3        | 72x36  |
-                    | 4        | 54x36  |
-                    | 5        | 64x36  |
+@param[in] LogoType ロゴの種類。0 から 7 までで指定します。以下のサイズのロゴが取得されます。
+                    | LogoType | サイズ   |
+                    |----------|----------|
+                    | 0        | 48x24    |
+                    | 1        | 36x24    |
+                    | 2        | 48x27    |
+                    | 3        | 72x36    |
+                    | 4        | 54x36    |
+                    | 5        | 64x36    |
+                    | 6        | 128x72   |
+                    | 7        | 256x144  |
                     いずれのロゴも16:9で表示すると本来の比率になります。
 
 @return ビットマップ(DIB セクション)のハンドル。
@@ -4270,7 +4272,7 @@ inline HBITMAP MsgGetLogo(PluginParam *pParam, WORD NetworkID, WORD ServiceID, B
 @param[in] ServiceID サービス ID
 
 @return 利用可能なロゴを表すフラグ。
-        下位から 1 ビットごとに LogoType の 0 から 5 までを表し、ビットが 1 であればその種類のロゴが利用できます。
+        下位から 1 ビットごとに LogoType の 0 から 7 までを表し、ビットが 1 であればその種類のロゴが利用できます。
         LogoType については MsgGetLogo() を参照してください。
 
 @since ver.0.0.10
@@ -9681,15 +9683,17 @@ public:
 
 	@param[in] NetworkID ネットワーク ID
 	@param[in] ServiceID サービス ID
-	@param[in] LogoType ロゴの種類。0 から 5 までで指定します。以下のサイズのロゴが取得されます。
-	                    | LogoType | サイズ |
-	                    |----------|--------|
-	                    | 0        | 48x24  |
-	                    | 1        | 36x24  |
-	                    | 2        | 48x27  |
-	                    | 3        | 72x36  |
-	                    | 4        | 54x36  |
-	                    | 5        | 64x36  |
+	@param[in] LogoType ロゴの種類。0 から 7 までで指定します。以下のサイズのロゴが取得されます。
+	                    | LogoType | サイズ   |
+	                    |----------|----------|
+	                    | 0        | 48x24    |
+	                    | 1        | 36x24    |
+	                    | 2        | 48x27    |
+	                    | 3        | 72x36    |
+	                    | 4        | 54x36    |
+	                    | 5        | 64x36    |
+	                    | 6        | 128x72   |
+	                    | 7        | 256x144  |
 	                    いずれのロゴも16:9で表示すると本来の比率になります。
 
 	@return ビットマップ(DIB セクション)のハンドル。
@@ -9714,7 +9718,7 @@ public:
 	@param[in] ServiceID サービス ID
 
 	@return 利用可能なロゴを表すフラグ。
-	        下位から 1 ビットごとに LogoType の 0 から 5 までを表し、ビットが 1 であればその種類のロゴが利用できます。
+	        下位から 1 ビットごとに LogoType の 0 から 7 までを表し、ビットが 1 であればその種類のロゴが利用できます。
 	        LogoType については GetLogo() を参照してください。
 
 	@since ver.0.0.10

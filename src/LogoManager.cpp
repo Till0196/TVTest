@@ -35,10 +35,45 @@ namespace
 {
 
 
-constexpr std::size_t MAX_LOGO_BYTES = 1296;
+constexpr std::size_t MAX_LOGO_BYTES = 65536;
 
 const char PNG_SIGNATURE[] = "\x89PNG\r\n\x1A\n";
 constexpr std::size_t PNG_SIGNATURE_BYTES = 8;
+constexpr DWORD PNG_CHUNK_IEND = 0x49454E44; // "IEND"
+
+bool IsPngDataComplete(const BYTE *pData, std::size_t DataSize)
+{
+	if (pData == nullptr || DataSize < PNG_SIGNATURE_BYTES)
+		return false;
+	if (std::memcmp(pData, PNG_SIGNATURE, PNG_SIGNATURE_BYTES) != 0)
+		return false;
+
+	std::size_t Pos = PNG_SIGNATURE_BYTES;
+	while (Pos + 8 <= DataSize) {
+		const BYTE *p = pData + Pos;
+		const DWORD ChunkSize =
+			(static_cast<DWORD>(p[0]) << 24) |
+			(static_cast<DWORD>(p[1]) << 16) |
+			(static_cast<DWORD>(p[2]) << 8) |
+			static_cast<DWORD>(p[3]);
+		const DWORD ChunkType =
+			(static_cast<DWORD>(p[4]) << 24) |
+			(static_cast<DWORD>(p[5]) << 16) |
+			(static_cast<DWORD>(p[6]) << 8) |
+			static_cast<DWORD>(p[7]);
+		Pos += 8;
+		if (ChunkSize > DataSize - Pos - 4)
+			return false;
+		if (ChunkType == PNG_CHUNK_IEND) {
+			if (ChunkSize != 0)
+				return false;
+			return Pos + ChunkSize + 4 == DataSize;
+		}
+		Pos += ChunkSize + 4;
+	}
+
+	return false;
+}
 
 
 #include <pshpack1.h>
@@ -255,7 +290,7 @@ bool CLogoManager::LoadLogoFile(LPCTSTR pszFileName)
 		LogoImageHeader2 ImageHeader;
 
 		if (File.Read(&ImageHeader, ImageHeaderSize) != ImageHeaderSize
-				|| ImageHeader.LogoType > 0x05
+				|| ImageHeader.LogoType > 0x07
 				|| ImageHeader.DataSize <= PNG_SIGNATURE_BYTES
 				|| ImageHeader.DataSize > MAX_LOGO_BYTES) {
 			TRACE(TEXT("CLogoManager::LoadLogoFile() : Image header error\n"));
@@ -473,7 +508,7 @@ DWORD CLogoManager::GetAvailableLogoType(WORD NetworkID, WORD ServiceID) const
 		return 0;
 	const WORD LogoID = itrID->second;
 	DWORD Flags = 0;
-	for (BYTE i = 0; i <= 5; i++) {
+	for (BYTE i = LOGOTYPE_FIRST; i <= LOGOTYPE_LAST; i++) {
 		LogoMap::const_iterator itrLogo = m_LogoMap.find(GetMapKey(NetworkID, LogoID, i));
 		if (itrLogo != m_LogoMap.end())
 			Flags |= 1 << i;
@@ -515,6 +550,8 @@ void CLogoManager::OnLogoDownloaded(const LibISDB::LogoDownloaderFilter::LogoDat
 {
 	// 透明なロゴは除外
 	if (Data.DataSize <= 93)
+		return;
+	if (!IsPngDataComplete(Data.pData, Data.DataSize))
 		return;
 
 	BlockLock Lock(m_Lock);
@@ -626,10 +663,10 @@ CLogoManager::CLogoData *CLogoManager::FindLogoData(WORD NetworkID, WORD LogoID,
 	LogoMap::iterator itr;
 
 	if (LogoType == LOGOTYPE_SMALL || LogoType == LOGOTYPE_BIG) {
-		static const BYTE SmallLogoPriority[] = {2, 0, 1, 5, 3, 4};
-		static const BYTE BigLogoPriority[] = {5, 3, 4, 2, 0, 1};
+		static const BYTE SmallLogoPriority[] = {2, 0, 1, 5, 3, 4, 6, 7};
+		static const BYTE BigLogoPriority[] = {7, 6, 5, 3, 4, 2, 0, 1};
 		const BYTE *pPriority = LogoType == LOGOTYPE_SMALL ? SmallLogoPriority : BigLogoPriority;
-		for (BYTE i = 0; i <= 5; i++) {
+		for (BYTE i = 0; i < _countof(BigLogoPriority); i++) {
 			Key = GetMapKey(NetworkID, LogoID, pPriority[i]);
 			itr = m_LogoMap.find(Key);
 			if (itr != m_LogoMap.end())
@@ -696,7 +733,7 @@ CLogoManager::CLogoData *CLogoManager::LoadLogoData(WORD NetworkID, WORD LogoID,
 		return nullptr;
 	LARGE_INTEGER FileSize;
 	if (!::GetFileSizeEx(hFile, &FileSize)
-			|| FileSize.QuadPart < 64 || FileSize.QuadPart > 1024) {
+			|| FileSize.QuadPart < 64 || FileSize.QuadPart > MAX_LOGO_BYTES) {
 		::CloseHandle(hFile);
 		return nullptr;
 	}

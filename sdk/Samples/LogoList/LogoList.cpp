@@ -31,12 +31,14 @@
 static const struct {
 	int Width, Height;
 } LogoSizeList[] = {
-	{48, 24}, // logo_type 0
-	{36, 24}, // logo_type 1
-	{48, 27}, // logo_type 2
-	{72, 36}, // logo_type 3
-	{54, 36}, // logo_type 4
-	{64, 36}, // logo_type 5
+	{48, 24},   // logo_type 0
+	{36, 24},   // logo_type 1
+	{48, 27},   // logo_type 2
+	{72, 36},   // logo_type 3
+	{54, 36},   // logo_type 4
+	{64, 36},   // logo_type 5
+	{128, 72},  // logo_type 6
+	{256, 144}, // logo_type 7
 };
 
 

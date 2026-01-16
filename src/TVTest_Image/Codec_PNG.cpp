@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <vector>
 #include "libpng/png.h"
 #include "zlib/zlib.h"
 #include "ImageLib.h"
@@ -367,8 +368,11 @@ HGLOBAL LoadAribPng(const void *pData, size_t DataSize)
 		{{ 1, 0}, { 2, 1}}, // Interlaced image 7
 	};
 	IHDR ImageHeader;
-	const BYTE *pCompressedImageData = nullptr;
-	size_t CompressedImageSize = 0;
+	std::vector<BYTE> CompressedImageData;
+	RGBA FilePalette[256];
+	int FilePaletteCount = 0;
+	BYTE FilePaletteAlpha[256];
+	int FilePaletteAlphaCount = 0;
 
 	size_t Pos = 8;
 	while (Pos + 8 < DataSize) {
@@ -402,9 +406,29 @@ HGLOBAL LoadAribPng(const void *pData, size_t DataSize)
 				return nullptr;
 			break;
 
+		case CHUNK_TYPE('P', 'L', 'T', 'E'):
+			FilePaletteCount = static_cast<int>(ChunkSize / 3);
+			if (FilePaletteCount > 256)
+				FilePaletteCount = 256;
+			for (int i = 0; i < FilePaletteCount; i++) {
+				FilePalette[i].Red = p[Pos + i * 3 + 0];
+				FilePalette[i].Green = p[Pos + i * 3 + 1];
+				FilePalette[i].Blue = p[Pos + i * 3 + 2];
+				FilePalette[i].Alpha = 255;
+			}
+			break;
+
+		case CHUNK_TYPE('t', 'R', 'N', 'S'):
+			FilePaletteAlphaCount = static_cast<int>(ChunkSize);
+			if (FilePaletteAlphaCount > 256)
+				FilePaletteAlphaCount = 256;
+			for (int i = 0; i < FilePaletteAlphaCount; i++) {
+				FilePaletteAlpha[i] = p[Pos + i];
+			}
+			break;
+
 		case CHUNK_TYPE('I', 'D', 'A', 'T'):
-			pCompressedImageData = &p[Pos];
-			CompressedImageSize = ChunkSize;
+			CompressedImageData.insert(CompressedImageData.end(), &p[Pos], &p[Pos + ChunkSize]);
 			break;
 
 		case CHUNK_TYPE('I', 'E', 'N', 'D'):
@@ -413,8 +437,12 @@ HGLOBAL LoadAribPng(const void *pData, size_t DataSize)
 		Pos += ChunkSize + 4;
 	}
 Decode:
-	if (pCompressedImageData == nullptr)
+	if (CompressedImageData.empty())
 		return nullptr;
+
+	for (int i = 0; i < FilePaletteAlphaCount && i < FilePaletteCount; i++) {
+		FilePalette[i].Alpha = FilePaletteAlpha[i];
+	}
 
 	int PlanesPerPixel;
 	struct {
@@ -452,7 +480,7 @@ Decode:
 	uLongf DecompressSize = static_cast<uLongf>(ImageDataSize);
 	if (uncompress(
 				ImageData.get(), &DecompressSize,
-				pCompressedImageData, static_cast<uLongf>(CompressedImageSize)) != Z_OK) {
+				CompressedImageData.data(), static_cast<uLongf>(CompressedImageData.size())) != Z_OK) {
 		return nullptr;
 	}
 
@@ -557,7 +585,18 @@ Decode:
 					break;
 				case 3: // Indexed
 					{
-						const RGBA &Color = DefaultPalette[Sample[0] < 128 ? Sample[0] : 8];
+						const int index = Sample[0];
+						const RGBA *pPalette;
+						int paletteSize;
+						// ファイル内にPLTEチャンクがあればそれを使用、なければデフォルトパレット
+						if (FilePaletteCount > 0) {
+							pPalette = FilePalette;
+							paletteSize = FilePaletteCount;
+						} else {
+							pPalette = DefaultPalette;
+							paletteSize = 128;
+						}
+						const RGBA &Color = (index < paletteSize) ? pPalette[index] : pPalette[0];
 						pDestLine[x1 * 4 + 0] = Color.Blue;
 						pDestLine[x1 * 4 + 1] = Color.Green;
 						pDestLine[x1 * 4 + 2] = Color.Red;

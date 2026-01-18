@@ -67,9 +67,63 @@ bool IsPngDataComplete(const BYTE *pData, std::size_t DataSize)
 		if (ChunkType == PNG_CHUNK_IEND) {
 			if (ChunkSize != 0)
 				return false;
-			return Pos + ChunkSize + 4 == DataSize;
+			return Pos + ChunkSize + 4 <= DataSize;
 		}
 		Pos += ChunkSize + 4;
+	}
+
+	return false;
+}
+
+bool GetPngDataEnd(const BYTE *pData, std::size_t DataSize, std::size_t *pEndSize)
+{
+	if (pEndSize == nullptr)
+		return false;
+	if (pData == nullptr || DataSize < PNG_SIGNATURE_BYTES)
+		return false;
+	if (std::memcmp(pData, PNG_SIGNATURE, PNG_SIGNATURE_BYTES) != 0)
+		return false;
+
+	std::size_t Pos = PNG_SIGNATURE_BYTES;
+	while (Pos + 8 <= DataSize) {
+		const BYTE *p = pData + Pos;
+		const DWORD ChunkSize =
+			(static_cast<DWORD>(p[0]) << 24) |
+			(static_cast<DWORD>(p[1]) << 16) |
+			(static_cast<DWORD>(p[2]) << 8) |
+			static_cast<DWORD>(p[3]);
+		const DWORD ChunkType =
+			(static_cast<DWORD>(p[4]) << 24) |
+			(static_cast<DWORD>(p[5]) << 16) |
+			(static_cast<DWORD>(p[6]) << 8) |
+			static_cast<DWORD>(p[7]);
+		Pos += 8;
+		if (ChunkSize > DataSize - Pos - 4)
+			return false;
+		if (ChunkType == PNG_CHUNK_IEND) {
+			if (ChunkSize != 0)
+				return false;
+			*pEndSize = Pos + ChunkSize + 4;
+			return *pEndSize <= DataSize;
+		}
+		Pos += ChunkSize + 4;
+	}
+
+	return false;
+}
+
+bool FindPngSignatureOffset(const BYTE *pData, std::size_t DataSize, std::size_t *pOffset)
+{
+	if (pOffset == nullptr)
+		return false;
+	if (pData == nullptr || DataSize < PNG_SIGNATURE_BYTES)
+		return false;
+
+	for (std::size_t i = 0; i + PNG_SIGNATURE_BYTES <= DataSize; i++) {
+		if (std::memcmp(pData + i, PNG_SIGNATURE, PNG_SIGNATURE_BYTES) == 0) {
+			*pOffset = i;
+			return true;
+		}
 	}
 
 	return false;
@@ -549,14 +603,33 @@ bool CLogoManager::GetLogoInfo(WORD NetworkID, WORD ServiceID, BYTE LogoType, Lo
 void CLogoManager::OnLogoDownloaded(const LibISDB::LogoDownloaderFilter::LogoData &Data)
 {
 	// 透明なロゴは除外
-	if (Data.DataSize <= 93)
+	const LibISDB::LogoDownloaderFilter::LogoData *pData = &Data;
+	LibISDB::LogoDownloaderFilter::LogoData FixedData = Data;
+
+	if (pData->DataSize <= 93) {
 		return;
-	if (!IsPngDataComplete(Data.pData, Data.DataSize))
-		return;
+	}
+	if (!IsPngDataComplete(pData->pData, pData->DataSize)) {
+		std::size_t SigOffset = 0;
+		std::size_t EndSize = 0;
+		if (FindPngSignatureOffset(pData->pData, pData->DataSize, &SigOffset)
+				&& GetPngDataEnd(pData->pData + SigOffset, pData->DataSize - SigOffset, &EndSize)
+				&& EndSize > PNG_SIGNATURE_BYTES
+				&& EndSize <= 0xFFFF) {
+			FixedData = *pData;
+			FixedData.pData = pData->pData + SigOffset;
+			FixedData.DataSize = static_cast<uint16_t>(EndSize);
+			pData = &FixedData;
+		} else {
+			return;
+		}
+	}
+	if (pData->LogoType == LOGOTYPE_256x144) {
+	}
 
 	BlockLock Lock(m_Lock);
 
-	const ULONGLONG Key = GetMapKey(Data.NetworkID, Data.LogoID, Data.LogoType);
+	const ULONGLONG Key = GetMapKey(pData->NetworkID, pData->LogoID, pData->LogoType);
 	LogoMap::iterator itr = m_LogoMap.find(Key);
 	bool fUpdated = false, fDataUpdated = false;
 	CLogoData *pLogoData;
@@ -565,26 +638,26 @@ void CLogoManager::OnLogoDownloaded(const LibISDB::LogoDownloaderFilter::LogoDat
 			m_fForceUpdate ?
 				-1 :
 				// バージョンが新しい場合のみ更新
-				CompareLogoVersion(itr->second->GetLogoVersion(), Data.LogoVersion);
+				CompareLogoVersion(itr->second->GetLogoVersion(), pData->LogoVersion);
 		if (VerCmp < 0
-				|| (VerCmp == 0 && itr->second->GetTime() < Data.Time)) {
+				|| (VerCmp == 0 && itr->second->GetTime() < pData->Time)) {
 			// BS/CSはバージョンが共通のため、データを比較して更新を確認する
-			if (Data.DataSize != itr->second->GetDataSize()
-					|| std::memcmp(Data.pData, itr->second->GetData(), Data.DataSize) != 0) {
+			if (pData->DataSize != itr->second->GetDataSize()
+					|| std::memcmp(pData->pData, itr->second->GetData(), pData->DataSize) != 0) {
 				TRACE(
 					TEXT("Update logo data : NID {:04x} / Logo ID {:03x} / Type {:02x} / Version {:03x} -> {:03x}\n"),
-					Data.NetworkID, Data.LogoID, Data.LogoType, itr->second->GetLogoVersion(), Data.LogoVersion);
-				pLogoData = new CLogoData(&Data);
+					pData->NetworkID, pData->LogoID, pData->LogoType, itr->second->GetLogoVersion(), pData->LogoVersion);
+				pLogoData = new CLogoData(pData);
 				itr->second.reset(pLogoData);
 				fUpdated = true;
 				fDataUpdated = true;
-			} else if (VerCmp < 0 && itr->second->GetLogoVersion() != Data.LogoVersion) {
-				itr->second->SetLogoVersion(Data.LogoVersion);
+			} else if (VerCmp < 0 && itr->second->GetLogoVersion() != pData->LogoVersion) {
+				itr->second->SetLogoVersion(pData->LogoVersion);
 				fUpdated = true;
 			}
 		}
 	} else {
-		pLogoData = new CLogoData(&Data);
+		pLogoData = new CLogoData(pData);
 		m_LogoMap.emplace(Key, pLogoData);
 		fUpdated = true;
 		fDataUpdated = true;
@@ -593,9 +666,9 @@ void CLogoManager::OnLogoDownloaded(const LibISDB::LogoDownloaderFilter::LogoDat
 	if (fUpdated)
 		m_fLogoUpdated = true;
 
-	if (Data.ServiceList.size() > 0) {
-		for (const auto &Service : Data.ServiceList) {
-			SetLogoIDMap(Service.NetworkID, Service.ServiceID, Data.LogoID, fUpdated);
+	if (pData->ServiceList.size() > 0) {
+		for (const auto &Service : pData->ServiceList) {
+			SetLogoIDMap(Service.NetworkID, Service.ServiceID, pData->LogoID, fUpdated);
 		}
 	}
 
@@ -614,7 +687,7 @@ void CLogoManager::OnLogoDownloaded(const LibISDB::LogoDownloaderFilter::LogoDat
 		if (m_fSaveLogo) {
 			StringFormat(
 				szFileName, TEXT("{:04X}_{:03X}_{:03X}_{:02X}"),
-				Data.NetworkID, Data.LogoID, Data.LogoVersion, Data.LogoType);
+				pData->NetworkID, pData->LogoID, pData->LogoVersion, pData->LogoType);
 			FilePath = szDirectory;
 			FilePath.Append(szFileName);
 			if (!FilePath.IsFileExists())
@@ -623,7 +696,7 @@ void CLogoManager::OnLogoDownloaded(const LibISDB::LogoDownloaderFilter::LogoDat
 		if (m_fSaveBmp) {
 			StringFormat(
 				szFileName, TEXT("{:04X}_{:03X}_{:03X}_{:02X}.bmp"),
-				Data.NetworkID, Data.LogoID, Data.LogoVersion, Data.LogoType);
+				pData->NetworkID, pData->LogoID, pData->LogoVersion, pData->LogoType);
 			FilePath = szDirectory;
 			FilePath.Append(szFileName);
 			if (!FilePath.IsFileExists())

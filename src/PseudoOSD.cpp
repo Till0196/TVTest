@@ -604,7 +604,7 @@ void CPseudoOSD::UpdateLayeredWindow()
 					Canvas.DrawImage(
 						0, (Height - m_IconHeight) / 2,
 						IconWidth, m_IconHeight,
-						&Image, 0, 0, m_IconWidth, m_IconHeight);
+						&Image, 0, 0, Image.GetWidth(), Image.GetHeight());
 					RECT rcIcon;
 					rcIcon.left = 0;
 					rcIcon.top = (Height - m_IconHeight) / 2;

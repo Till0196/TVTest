@@ -41,6 +41,8 @@ static const struct {
 	{256, 144}, // logo_type 7
 };
 
+constexpr int BASE_LOGO_TYPE_COUNT = 6; // logo_type 0..5
+
 
 // プラグインクラス
 class CLogoList : public TVTest::CTVTestPlugin
@@ -56,7 +58,7 @@ class CLogoList : public TVTest::CTVTestPlugin
 		TCHAR m_szServiceName[64];
 		WORD m_NetworkID;
 		WORD m_ServiceID;
-		HBITMAP m_hbmLogo[6];
+		HBITMAP m_hbmLogo[_countof(LogoSizeList)];
 		CServiceInfo(const TVTest::ChannelInfo &ChInfo);
 		~CServiceInfo();
 	};
@@ -79,6 +81,7 @@ class CLogoList : public TVTest::CTVTestPlugin
 	int m_ServiceNameWidth;
 	int m_ItemWidth;
 	int m_ItemHeight;
+	int m_DisplayLogoTypeCount = BASE_LOGO_TYPE_COUNT;
 	HFONT m_hfont = nullptr;
 	HBRUSH m_hbrBack = nullptr;
 	std::vector<std::unique_ptr<CServiceInfo>> m_ServiceList;
@@ -283,21 +286,23 @@ bool CLogoList::UpdateLogo()
 {
 	bool fUpdated = false;
 
+	constexpr UINT AllLogoMask = (1U << _countof(LogoSizeList)) - 1;
+
 	for (std::size_t i = 0; i < m_ServiceList.size(); i++) {
 		CServiceInfo *pServiceInfo = m_ServiceList[i].get();
 
 		UINT ExistsType = 0;
-		for (BYTE j = 0; j < 6; j++) {
+		for (BYTE j = 0; j < _countof(LogoSizeList); j++) {
 			if (pServiceInfo->m_hbmLogo[j] != nullptr)
 				ExistsType |= 1U << j;
 		}
-		if ((ExistsType & 0x3F) != 0x3F) {
+		if ((ExistsType & AllLogoMask) != AllLogoMask) {
 			// まだ取得していないロゴがある
 			UINT AvailableType =
 				m_pApp->GetAvailableLogoType(pServiceInfo->m_NetworkID, pServiceInfo->m_ServiceID);
 			if (AvailableType != ExistsType) {
 				// 新しくロゴが取得されたので更新する
-				for (BYTE j = 0; j < 6; j++) {
+				for (BYTE j = 0; j < _countof(LogoSizeList); j++) {
 					if (pServiceInfo->m_hbmLogo[j] == nullptr
 							&& (AvailableType & (1U << j)) != 0) {
 						pServiceInfo->m_hbmLogo[j] =
@@ -308,6 +313,23 @@ bool CLogoList::UpdateLogo()
 				}
 			}
 		}
+	}
+
+	int MaxLogoType = BASE_LOGO_TYPE_COUNT - 1;
+	for (const auto &Service : m_ServiceList) {
+		for (int i = BASE_LOGO_TYPE_COUNT; i < _countof(LogoSizeList); i++) {
+			if (Service->m_hbmLogo[i] != nullptr)
+				MaxLogoType = std::max(MaxLogoType, i);
+		}
+	}
+	if (MaxLogoType + 1 != m_DisplayLogoTypeCount) {
+		m_DisplayLogoTypeCount = MaxLogoType + 1;
+		CalcMetrics();
+		if (m_hwndList != nullptr) {
+			::SendMessage(m_hwndList, LB_SETITEMHEIGHT, 0, m_ItemHeight);
+			::SendMessage(m_hwndList, LB_SETHORIZONTALEXTENT, m_ItemWidth, 0);
+		}
+		fUpdated = true;
 	}
 
 	return fUpdated;
@@ -357,10 +379,10 @@ void CLogoList::CalcMetrics()
 	m_ServiceNameWidth = tm.tmAveCharWidth * 20;
 
 	int LogoWidth = 0;
-	for (int i = 0; i < 6; i++)
+	for (int i = 0; i < m_DisplayLogoTypeCount; i++)
 		LogoWidth += LogoSizeList[i].Width;
-	m_ItemWidth = m_ServiceNameWidth + (m_ItemMargin * 2) + (m_LogoMargin * 6) + LogoWidth;
-	m_ItemHeight = std::max<int>(36, tm.tmHeight) + (m_ItemMargin * 2);
+	m_ItemWidth = m_ServiceNameWidth + (m_ItemMargin * 2) + (m_LogoMargin * m_DisplayLogoTypeCount) + LogoWidth;
+	m_ItemHeight = std::max<int>(LogoSizeList[m_DisplayLogoTypeCount - 1].Height, tm.tmHeight) + (m_ItemMargin * 2);
 }
 
 
@@ -455,14 +477,19 @@ LRESULT CALLBACK CLogoList::WndProc(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lPa
 			HDC hdcMemory = ::CreateCompatibleDC(pdis->hDC);
 			HGDIOBJ hOldBitmap = ::GetCurrentObject(hdcMemory, OBJ_BITMAP);
 			int x = rc.right + pThis->m_LogoMargin;
-			for (int i = 0; i < 6; i++) {
+			for (int i = 0; i < pThis->m_DisplayLogoTypeCount; i++) {
 				if (pService->m_hbmLogo[i] != nullptr) {
-					::SelectObject(hdcMemory, pService->m_hbmLogo[i]);
-					::BitBlt(
-						pdis->hDC,
-						x, rc.top + ((rc.bottom - rc.top) - LogoSizeList[i].Height) / 2,
-						LogoSizeList[i].Width, LogoSizeList[i].Height,
-						hdcMemory, 0, 0, SRCCOPY);
+					BITMAP bm;
+					if (::GetObject(pService->m_hbmLogo[i], sizeof(bm), &bm) == sizeof(bm)) {
+						::SelectObject(hdcMemory, pService->m_hbmLogo[i]);
+						const int OldStretchMode = ::SetStretchBltMode(pdis->hDC, STRETCH_HALFTONE);
+						::StretchBlt(
+							pdis->hDC,
+							x, rc.top + ((rc.bottom - rc.top) - LogoSizeList[i].Height) / 2,
+							LogoSizeList[i].Width, LogoSizeList[i].Height,
+							hdcMemory, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
+						::SetStretchBltMode(pdis->hDC, OldStretchMode);
+					}
 				}
 				x += LogoSizeList[i].Width + pThis->m_LogoMargin;
 			}
@@ -566,14 +593,14 @@ CLogoList::CServiceInfo::CServiceInfo(const TVTest::ChannelInfo &ChInfo)
 	::lstrcpy(m_szServiceName, ChInfo.szChannelName);
 	m_NetworkID = ChInfo.NetworkID;
 	m_ServiceID = ChInfo.ServiceID;
-	for (int i = 0; i < 6; i++)
+	for (int i = 0; i < _countof(LogoSizeList); i++)
 		m_hbmLogo[i] = nullptr;
 }
 
 
 CLogoList::CServiceInfo::~CServiceInfo()
 {
-	for (int i = 0; i < 6; i++) {
+	for (int i = 0; i < _countof(LogoSizeList); i++) {
 		if (m_hbmLogo[i] != nullptr)
 			::DeleteObject(m_hbmLogo[i]);
 	}

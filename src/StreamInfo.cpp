@@ -701,31 +701,33 @@ void CStreamInfoPage::SetService()
 				}
 			}
 
-			int tsCount = 1, tlvCount = 1;
 			for (int i = 0; i < 15; i++) {
 				if (TSMFInfo.Streams[i].IsActive) {
 					LPCTSTR typeLabel, idLabel;
-					int relNum;
 					if (TSMFInfo.Streams[i].StreamType) {
 						typeLabel = TEXT("TS");
 						idLabel = TEXT("TSID");
-						relNum = tsCount++;
 					} else {
 						typeLabel = TEXT("TLV");
 						idLabel = TEXT("TLVID");
-						relNum = tlvCount++;
 					}
+					static constexpr LPCTSTR ReceiveStatusLabels[] = {
+						TEXT("通常"), TEXT("やや悪い"), TEXT("受信不可"), TEXT("不明")
+					};
+					const uint8_t rs = TSMFInfo.Streams[i].ReceiveStatus;
+					LPCTSTR rsLabel = ReceiveStatusLabels[rs < 3 ? rs : 3];
 					StringFormat(
 						szText,
-						TEXT("{}{} : {} {:#04x} ({}) / ONID: {:#04x} ({}) / 受信状態: {}"),
+						TEXT("{}{} : {} {:#04x} ({}) / ONID: {:#04x} ({}) / 受信状態: {} ({})"),
 						typeLabel,
-						relNum,
+						TSMFInfo.Streams[i].RelativeStreamNumber,
 						idLabel,
 						TSMFInfo.Streams[i].StreamID,
 						TSMFInfo.Streams[i].StreamID,
 						TSMFInfo.Streams[i].OriginalNetworkID,
 						TSMFInfo.Streams[i].OriginalNetworkID,
-						TSMFInfo.Streams[i].ReceiveStatus);
+						rsLabel,
+						rs);
 					tvis.item.pszText = szText;
 					TreeView_InsertItem(hwndTree, &tvis);
 				}
